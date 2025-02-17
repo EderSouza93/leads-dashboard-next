@@ -22,7 +22,7 @@ export async function getLeads(webhookUrl: string, filters: Record<string, strin
         ),
       });
 
-      const response = await fetch(`${webhookUrl}/crm.deal.list?${params.toString()}`, {
+      const response = await fetch(`${webhookUrl}crm.deal.list?${params.toString()}`, {
         method: "GET",
         headers: { "Content-Type" : "application/json" },
       });
