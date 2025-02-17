@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { useTheme } from "next-themes";
+import { getLeads } from "@/lib/bitrix"
 
 // COMPONENTS
 import ThemeToggle from "@/components/toggleTheme";
@@ -11,6 +12,27 @@ import { Activity, Users, TrendingUp } from "lucide-react";
 
 export default function Dashboard() {
   const { theme, resolvedTheme } = useTheme();
+  const [leads, setLeadsData] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    async function fetchLeads() {
+      try {
+        const response = await fetch("/api/leads");
+        if(!response.ok) throw new Error("Erro ao buscar leads");
+        const data = await response.json();
+        setLeadsData(data)
+      } catch (error) {
+        console.error(error);
+      } finally {
+        setIsLoading(false);
+      }
+    }
+
+    fetchLeads()
+  }, []);
+
+  if(isLoading) return <p>Carregando...</p>
 
   const TimeComponent = () => {
     const [time, setTime] = useState('');
@@ -30,6 +52,16 @@ export default function Dashboard() {
     { date: "2024-03-22", leads: 8 },
     { date: "2024-03-23", leads: 5 },
     { date: "2024-03-24", leads: 10 },
+    { date: "2024-03-25", leads: 3 },
+    { date: "2024-03-26", leads: 9 },
+    { date: "2024-03-27", leads: 15 },
+    { date: "2024-03-28", leads: 0 },
+    { date: "2024-03-29", leads: 2 },
+    { date: "2024-03-30", leads: 6 },
+    { date: "2024-03-31", leads: 8 },
+    { date: "2024-04-01", leads: 20 },
+    { date: "2024-04-02", leads: 23 },
+    { date: "2024-04-03", leads: 25 },
   ];
 
   return (
@@ -50,8 +82,8 @@ export default function Dashboard() {
               <Users className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">12</div>
-              <p className="text-xs text-muted-foreground">+20.1% do que ontem</p>
+              <div className="text-2xl font-bold">{leads.length}</div>
+              <p className="text-xs text-muted-foreground">+{Math.floor(Math.random() * 10)}% do que ontem</p>
             </CardContent>
           </Card>
           <Card>
@@ -89,7 +121,10 @@ export default function Dashboard() {
               </CardHeader>
               <CardContent className="pl-2">
                 <ResponsiveContainer width="100%" height={350}>
-                  <LineChart data={mockData}>
+                  {isLoading ? (
+                    <p>Carregando dados...</p>
+                  ) : (
+                    <LineChart data={mockData}>
                     <CartesianGrid strokeDasharray="3 3" />
                     <XAxis dataKey="date" />
                     <YAxis />
@@ -97,6 +132,7 @@ export default function Dashboard() {
                     <Legend />
                     <Line type="monotone" dataKey="leads" stroke="hsl(var(--primary))" activeDot={{ r: 8 }} />
                   </LineChart>
+                  )}      
                 </ResponsiveContainer>
               </CardContent>
             </Card>
