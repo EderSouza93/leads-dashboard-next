@@ -9,21 +9,19 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
-  url      = "file:./dev.db"
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
 }
 
 model Lead {
   id                Int     @id @default(autoincrement())
   bitrixId          String  @unique
-  title             String  
-  sourceId          String
-  assignedById      String
-  stageId           String
+  title             String?  
+  sourceId          String?
+  assignedById      String?
+  stageId           String?
   bitrixCreatedAt   DateTime
   localCreatedAt    DateTime
   localDate         String
-  rawData           Json
-
-  @@map("leads")
+  rawData           String
 }

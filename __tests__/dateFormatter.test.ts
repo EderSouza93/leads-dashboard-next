@@ -1,89 +1,183 @@
-import { getCurrentDateForUrl } from "@/utils/paramDate";
+import { saveLeadsToDatabase } from '@/services/leadService';
+import { adjustDateFromRussia } from '@/lib/bitrix';
+import { format } from 'date-fns';
+import { PrismaClient } from '@prisma/client';
+import { Lead } from '@/types/leadSchema';
 
-describe('getCurrentDateForUrl', () => {
-    const originalDate = global.Date;
-    let mockLocalDate: Date;
-    let mockMoscowDate: Date;
+// Mock do PrismaClient
+jest.mock('@prisma/client', () => {
+  const mPrisma = {
+    $transaction: jest.fn(),
+    lead: {
+      upsert: jest.fn(),
+    },
+  };
+  return {
+    PrismaClient: jest.fn(() => mPrisma),
+  };
+});
 
-    // Helper para configurar tanto a data local quanto a de Moscou
-    const setupDateMocks = (localISOString: string, moscowISOString: string) => {
-        mockLocalDate = new Date(localISOString);
-        mockMoscowDate = new Date(moscowISOString);
+// Mock da função adjustDateFromRussia
+jest.mock('@/lib/bitrix', () => ({
+  adjustDateFromRussia: jest.fn(),
+}));
 
-        // Mock da classe Date
-        global.Date = class extends originalDate {
-            constructor() {
-                super();
-                return mockLocalDate;
-            }
+const prisma = new PrismaClient();
 
-            // Mock do toLocaleString para simular timezone de Moscou
-            toLocaleString(locale?: string | string[], options?: Intl.DateTimeFormatOptions) {
-                if (options?.timeZone === 'Europe/Moscow') {
-                    return mockMoscowDate.toLocaleString();
-                }
-                return mockLocalDate.toLocaleString();
-            }
-        } as DateConstructor;
+describe('saveLeadsToDatabase', () => {
+  const mockLead: Lead = {
+    ID: '36090',
+    TITLE: 'Wendell Alex Cunha Silva - Aruana Garden - MCMV',
+    SOURCE_ID: 'WEBFORM',
+    ASSIGNED_BY_ID: '1152',
+    STAGE_ID: 'C2:PREPARATION',
+    DATE_CREATE: '2025-02-19T15:29:16+03:00',
+  };
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('deve salvar um lead com datas ajustadas corretamente', async () => {
+    const localDate = new Date('2025-02-19T12:29:16.000Z');
+    (adjustDateFromRussia as jest.Mock).mockReturnValue(localDate);
+    (prisma.$transaction as jest.Mock).mockResolvedValue([{ id: 1 }]);
+
+    const expectedLeadData = {
+      bitrixId: mockLead.ID,
+      title: mockLead.TITLE,
+      sourceId: mockLead.SOURCE_ID,
+      assignedById: mockLead.ASSIGNED_BY_ID,
+      stageId: mockLead.STAGE_ID,
+      bitrixCreatedAt: new Date(mockLead.DATE_CREATE),
+      localCreatedAt: localDate,
+      localDate: format(localDate, 'yyyy-MM-dd'),
+      rawData: JSON.stringify(mockLead),
     };
 
-    afterEach(() => {
-        global.Date = originalDate;
-    });
+    const result = await saveLeadsToDatabase([mockLead]);
 
-    it("não deve incrementar a data durante o dia (antes das 6h em Moscou - meia-noite no Brasil)", () => {
-        // Local: 15h (16/02), Moscou: 21h (16/02)
-        setupDateMocks(
-            '2025-02-16T15:00:00',
-            '2025-02-16T21:00:00'
-        );
+    expect(adjustDateFromRussia).toHaveBeenCalledWith(mockLead.DATE_CREATE);
+    expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+    expect(prisma.$transaction).toHaveBeenCalledWith([
+      expect.objectContaining({
+        where: { bitrixId: mockLead.ID },
+        update: expectedLeadData,
+        create: expectedLeadData,
+      }),
+    ]);
+    expect(result).toBe(1);
+  });
 
-        const result = getCurrentDateForUrl();
-        expect(result.BEGINDATE).toBe('2025-02-16');
-    });
+  it('deve lidar com SOURCE_ID como null', async () => {
+    const mockLeadNoSource: Lead = { ...mockLead, SOURCE_ID: null };
+    const localDate = new Date('2025-02-19T12:29:16.000Z');
+    (adjustDateFromRussia as jest.Mock).mockReturnValue(localDate);
+    (prisma.$transaction as jest.Mock).mockResolvedValue([{ id: 1 }]);
 
-    it("deve incrementar a data após 6h em Moscou e antes da meia-noite local", () => {
-        // Local: 03h (16/02), Moscou: 09h (16/02)
-        setupDateMocks(
-            '2025-02-16T03:00:00',
-            '2025-02-17T09:00:00'
-        );
+    const expectedLeadData = {
+      bitrixId: mockLeadNoSource.ID,
+      title: mockLeadNoSource.TITLE,
+      sourceId: null,
+      assignedById: mockLeadNoSource.ASSIGNED_BY_ID,
+      stageId: mockLeadNoSource.STAGE_ID,
+      bitrixCreatedAt: new Date(mockLeadNoSource.DATE_CREATE),
+      localCreatedAt: localDate,
+      localDate: format(localDate, 'yyyy-MM-dd'),
+      rawData: JSON.stringify(mockLeadNoSource),
+    };
 
-        const result = getCurrentDateForUrl();
-        expect(result.BEGINDATE).toBe('2025-02-17');
-    });
+    const result = await saveLeadsToDatabase([mockLeadNoSource]);
 
-    it("não deve incrementar a data após a meia-noite local", () => {
-        // Local: 00:30h (16/02), Moscou: 06:30h (16/02)
-        setupDateMocks(
-            '2025-02-16T00:30:00',
-            '2025-02-16T06:30:00'
-        );
+    expect(prisma.$transaction).toHaveBeenCalledWith([
+      expect.objectContaining({
+        where: { bitrixId: mockLeadNoSource.ID },
+        update: expectedLeadData,
+        create: expectedLeadData,
+      }),
+    ]);
+    expect(result).toBe(1);
+  });
 
-        const result = getCurrentDateForUrl();
-        expect(result.BEGINDATE).toBe('2025-02-16');
-    });
+  it('deve retornar 0 se a lista de leads estiver vazia', async () => {
+    const result = await saveLeadsToDatabase([]);
+    expect(result).toBe(0);
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
 
-    // Casos adicionais recomendados
-    it("deve lidar corretamente com a mudança de mês", () => {
-        // Local: 22h (31/01), Moscou: 04h (01/02)
-        setupDateMocks(
-            '2025-01-31T22:00:00',
-            '2025-02-01T04:00:00'
-        );
+  it('deve lançar um erro se o salvamento falhar', async () => {
+    const localDate = new Date('2025-02-19T12:29:16.000Z');
+    (adjustDateFromRussia as jest.Mock).mockReturnValue(localDate);
+    (prisma.$transaction as jest.Mock).mockRejectedValue(new Error('Erro no banco de dados'));
 
-        const result = getCurrentDateForUrl();
-        expect(result.BEGINDATE).toBe('2025-01-31');
-    });
+    await expect(saveLeadsToDatabase([mockLead])).rejects.toThrow('Erro no banco de dados');
+    expect(adjustDateFromRussia).toHaveBeenCalledWith(mockLead.DATE_CREATE);
+    expect(prisma.$transaction).toHaveBeenCalled();
+  });
 
-    it("deve lidar corretamente com a mudança de ano", () => {
-        // Local: 22h (31/12), Moscou: 04h (01/01)
-        setupDateMocks(
-            '2024-12-31T22:00:00',
-            '2025-01-01T04:00:00'
-        );
+  it('deve ajustar corretamente datas em diferentes fusos horários', async () => {
+    const lateLead: Lead = {
+      ...mockLead,
+      DATE_CREATE: '2025-02-19T23:59:59+03:00',
+    };
+    const localDate = new Date('2025-02-19T20:59:59.000Z');
+    (adjustDateFromRussia as jest.Mock).mockReturnValue(localDate);
+    (prisma.$transaction as jest.Mock).mockResolvedValue([{ id: 1 }]);
 
-        const result = getCurrentDateForUrl();
-        expect(result.BEGINDATE).toBe('2024-12-31');
-    });
+    const expectedLeadData = {
+      bitrixId: lateLead.ID,
+      title: lateLead.TITLE,
+      sourceId: lateLead.SOURCE_ID,
+      assignedById: lateLead.ASSIGNED_BY_ID,
+      stageId: lateLead.STAGE_ID,
+      bitrixCreatedAt: new Date(lateLead.DATE_CREATE),
+      localCreatedAt: localDate,
+      localDate: format(localDate, 'yyyy-MM-dd'),
+      rawData: JSON.stringify(lateLead),
+    };
+
+    const result = await saveLeadsToDatabase([lateLead]);
+
+    expect(prisma.$transaction).toHaveBeenCalledWith([
+      expect.objectContaining({
+        where: { bitrixId: lateLead.ID },
+        update: expectedLeadData,
+        create: expectedLeadData,
+      }),
+    ]);
+    expect(result).toBe(1);
+  });
+
+  it('deve atribuir leads de 0h-6h da Rússia ao dia anterior local', async () => {
+    const mockLeadRussiaEarly: Lead = {
+      ...mockLead,
+      DATE_CREATE: '2025-02-19T02:00:00+03:00',
+    };
+    const localDate = new Date('2025-02-18T23:00:00Z');
+    (adjustDateFromRussia as jest.Mock).mockReturnValue(localDate);
+    (prisma.$transaction as jest.Mock).mockResolvedValue([{ id: 1 }]);
+
+    const expectedLeadData = {
+      bitrixId: mockLeadRussiaEarly.ID,
+      title: mockLeadRussiaEarly.TITLE,
+      sourceId: mockLeadRussiaEarly.SOURCE_ID,
+      assignedById: mockLeadRussiaEarly.ASSIGNED_BY_ID,
+      stageId: mockLeadRussiaEarly.STAGE_ID,
+      bitrixCreatedAt: new Date(mockLeadRussiaEarly.DATE_CREATE),
+      localCreatedAt: localDate,
+      localDate: format(localDate, 'yyyy-MM-dd'), // '2025-02-18'
+      rawData: JSON.stringify(mockLeadRussiaEarly),
+    };
+
+    const result = await saveLeadsToDatabase([mockLeadRussiaEarly]);
+
+    expect(prisma.$transaction).toHaveBeenCalledWith([
+      expect.objectContaining({
+        where: { bitrixId: mockLeadRussiaEarly.ID },
+        update: expectedLeadData,
+        create: expectedLeadData,
+      }),
+    ]);
+    expect(result).toBe(1);
+  });
 });

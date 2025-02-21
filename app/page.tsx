@@ -1,7 +1,10 @@
 "use client";
 import { useEffect, useState } from "react";
 import { useTheme } from "next-themes";
-import { getLeads } from "@/lib/bitrix"
+import { format, subDays } from "date-fns";
+
+//UTILS
+import { calculatePercentageDifference } from "@/utils/calculatePercentage";
 
 // COMPONENTS
 import ThemeToggle from "@/components/toggleTheme";
@@ -12,24 +15,41 @@ import { Activity, Users, TrendingUp } from "lucide-react";
 
 export default function Dashboard() {
   const { theme, resolvedTheme } = useTheme();
-  const [leads, setLeadsData] = useState([]);
+  const [LeadsData, setLeadsData] = useState<{ date: string; leads: number } []>([]);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    async function fetchLeads() {
+    async function fetchLeadsForRange() {
       try {
-        const response = await fetch("/api/leads");
-        if(!response.ok) throw new Error("Erro ao buscar leads");
-        const data = await response.json();
-        setLeadsData(data)
+        setIsLoading(true);
+        const daysToFecth = 15;
+        const today = new Date();
+        const leadsByDate: { [key: string]: number } = {};
+
+        // Search leads for every day 
+        for (let i = 0; i < daysToFecth; i++) {
+          const date = format(subDays(today, i), "yyyy-MM-dd");
+          const response = await fetch(`/api/leads-from-db?date=${date}`);
+          if (!response.ok) throw new Error(`Erro ao buscar leads para ${date}`);
+          const data = await response.json();
+          leadsByDate[date] = data.count || 0;
+        }
+
+        // Transform on array for the chart
+        const chartData = Object.entries(leadsByDate)
+          .map(([date, leads]) => ({ date, leads }))
+          .sort((a, b) => a.date.localeCompare(b.date));
+
+        setLeadsData(chartData);
+
       } catch (error) {
-        console.error(error);
+        console.error("Erro ao buscar leads:", error);
       } finally {
         setIsLoading(false);
       }
     }
 
-    fetchLeads()
+    fetchLeadsForRange()
   }, []);
 
   if(isLoading) return <p>Carregando...</p>
@@ -43,26 +63,6 @@ export default function Dashboard() {
 
     return <span>{time}</span>
   }
-
-
-  // This would be replaced with actual data from Bitrix24
-  const mockData = [
-    { date: "2024-03-20", leads: 4 },
-    { date: "2024-03-21", leads: 6 },
-    { date: "2024-03-22", leads: 8 },
-    { date: "2024-03-23", leads: 5 },
-    { date: "2024-03-24", leads: 10 },
-    { date: "2024-03-25", leads: 3 },
-    { date: "2024-03-26", leads: 9 },
-    { date: "2024-03-27", leads: 15 },
-    { date: "2024-03-28", leads: 0 },
-    { date: "2024-03-29", leads: 2 },
-    { date: "2024-03-30", leads: 6 },
-    { date: "2024-03-31", leads: 8 },
-    { date: "2024-04-01", leads: 20 },
-    { date: "2024-04-02", leads: 23 },
-    { date: "2024-04-03", leads: 25 },
-  ];
 
   return (
     <div className="min-h-screen bg-background p-8">
@@ -82,8 +82,18 @@ export default function Dashboard() {
               <Users className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">{leads.length}</div>
-              <p className="text-xs text-muted-foreground">+{Math.floor(Math.random() * 10)}% do que ontem</p>
+              <div className="text-2xl font-bold">
+                {isLoading ? '...' : LeadsData[LeadsData.length -1]?.leads || 0}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                { isLoading || LeadsData.length < 2
+                  ? 'Sem dados de ontem'
+                  : `${calculatePercentageDifference(
+                    LeadsData[LeadsData.length - 1].leads,
+                    LeadsData[LeadsData.length - 2].leads
+                  )}% em relação a ontem`
+                }
+              </p>
             </CardContent>
           </Card>
           <Card>
@@ -96,7 +106,7 @@ export default function Dashboard() {
               <p className="text-xs text-muted-foreground">+2.4% do que na ultima semana</p>
             </CardContent>
           </Card>
-          <Card>
+          {/* <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">Campanhas ativas</CardTitle>
               <Activity className="h-4 w-4 text-muted-foreground" />
@@ -105,7 +115,7 @@ export default function Dashboard() {
               <div className="text-2xl font-bold">3</div>
               <p className="text-xs text-muted-foreground">2 terminando essa semana</p>
             </CardContent>
-          </Card>
+          </Card> */}
         </div>
 
         <Tabs defaultValue="overview" className="space-y-4">
@@ -124,7 +134,7 @@ export default function Dashboard() {
                   {isLoading ? (
                     <p>Carregando dados...</p>
                   ) : (
-                    <LineChart data={mockData}>
+                    <LineChart data={LeadsData}>
                     <CartesianGrid strokeDasharray="3 3" />
                     <XAxis dataKey="date" />
                     <YAxis />

@@ -17,7 +17,7 @@ export function adjustDateFromRussia(dateStr: string): Date {
 }
 
 /**
- * Get teh dates needed to fetch leads considering the time zone difference
+ * Get the dates needed to fetch leads considering the time zone difference
  * @param targetDate Target date in YYYY-MM-DD format 
  * @returns Object with the previous target and date
  */
@@ -55,6 +55,8 @@ export async function getLeads(webhookUrl: string, filters: Record<string, strin
       const params = new URLSearchParams({
         "order[STATUS_ID]": "ASC",
         "filter[SOURCE_ID]": "WEBFORM",
+        "filter[CREATED_BY_ID]": "30",
+        "filter[CATEGORY_ID]": "2",
         "start": start.toString(),
         ...Object.fromEntries(
           Object.entries(filters).map(([key, value]) => [`filter[${key}]`, value])
@@ -106,23 +108,41 @@ export async function getLeads(webhookUrl: string, filters: Record<string, strin
  */
 export async function getLeadsByLocalDate(webhookUrl: string, localDate?: string): Promise<Lead[]> {
   const { targetDate, previousDate } = getDateRangeForTimezoneCompensation(localDate);
+  const localDateString = localDate || format(new Date(), 'yyyy-MM-dd');
 
-  const [primaryLeads, previousDayLeads] = await Promise.all([
+  const [targetDayLeads, previousDayLeads] = await Promise.all([
     getLeads(webhookUrl, { "BEGINDATE": targetDate }),
     getLeads(webhookUrl, { "BEGINDATE": previousDate })
   ]);
 
-  const allLeads = [...primaryLeads, ...previousDayLeads];
-  const localDateString = localDate || format(new Date(), 'yyyy-MM-dd');
+  const allLeads = [...targetDayLeads, ...previousDayLeads];
+  
+  const targetLocalDate = parseISO(localDateString);
+  const previousLocalDate = subHours(targetLocalDate, 24);
+  const previousLocalDateString = format(previousLocalDate, 'yyyy-MM-dd');
 
-  const filteredLeads = allLeads.filter(lead => {
+  const filteredLeads = allLeads.map(lead => {
     if (!lead.DATE_CREATE) return false;
 
+    const russiaCreationDate = parseISO(lead.DATE_CREATE);
+    const russiaHour = russiaCreationDate.getUTCHours() + RUSSIA_UTC_OFFSET;
     const localCreationDate = adjustDateFromRussia(lead.DATE_CREATE);
     const leadLocalDate = format(localCreationDate, 'yyyy-MM-dd');
+    
+    
 
-    return leadLocalDate === localDateString
-  });
+    if (russiaHour >= 0 && russiaHour < 6) {
+      return {
+        ...lead,
+        localAdjustedDate: previousLocalDateString,
+      }
+    }
+
+    if (russiaHour >= 6 && leadLocalDate === localDateString ) {
+      return lead;
+    }
+    return null
+  }).filter(Boolean) as Lead[];
 
   return filteredLeads
 }

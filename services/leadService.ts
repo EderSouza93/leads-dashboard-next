@@ -1,7 +1,7 @@
-import { Lead } from "@/types/leadSchema";
-import { adjustDateFromRussia } from "@/lib/bitrix";
-import { format } from "date-fns";
-import { PrismaClient } from "@prisma/client";
+import { PrismaClient } from '@prisma/client';
+import { Lead } from '@/types/leadSchema';
+import { adjustDateFromRussia } from '@/lib/bitrix';
+import { format } from 'date-fns';
 
 const prisma = new PrismaClient();
 
@@ -21,7 +21,7 @@ export async function saveLeadsToDatabase(leads: Lead[]): Promise<number> {
 
     const leadsToSave = leads.map(lead => {
         const localCreationDate = adjustDateFromRussia(lead.DATE_CREATE);
-        const localDate = format(localCreationDate, 'yyyy-MM-dd');
+        const localDate = (lead as any).localAdjustedDate || format(localCreationDate, 'yyyy-MM-dd');
 
         return {
             bitrixId: lead.ID,
