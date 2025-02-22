@@ -46,7 +46,6 @@ export async function saveLeadsToDatabase(leads: Lead[]): Promise<number> {
                 })
             )
         );
-
         return result.length
     } catch (error) {
         console.error("Erro ao salvar leads no banco de dados:", error);

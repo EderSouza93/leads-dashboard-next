@@ -1,0 +1,13 @@
+
+{
+    "crons": [
+      {
+        "path": "/api/sync-leads",
+        "schedule": "*/15 * * * *" 
+      },
+      {
+        "path": "/api/sync-leads?full=true",
+        "schedule": "0 0 * * *" 
+      }
+    ]
+  }

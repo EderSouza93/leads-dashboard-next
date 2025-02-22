@@ -116,31 +116,29 @@ export async function getLeadsByLocalDate(webhookUrl: string, localDate?: string
   ]);
 
   const allLeads = [...targetDayLeads, ...previousDayLeads];
-  
-  const targetLocalDate = parseISO(localDateString);
-  const previousLocalDate = subHours(targetLocalDate, 24);
-  const previousLocalDateString = format(previousLocalDate, 'yyyy-MM-dd');
 
   const filteredLeads = allLeads.map(lead => {
-    if (!lead.DATE_CREATE) return false;
+    if (!lead.DATE_CREATE) return null;
 
     const russiaCreationDate = parseISO(lead.DATE_CREATE);
     const russiaHour = russiaCreationDate.getUTCHours() + RUSSIA_UTC_OFFSET;
     const localCreationDate = adjustDateFromRussia(lead.DATE_CREATE);
-    const leadLocalDate = format(localCreationDate, 'yyyy-MM-dd');
+    let  adjustedleadLocalDate = format(localCreationDate, 'yyyy-MM-dd');
     
     
 
     if (russiaHour >= 0 && russiaHour < 6) {
-      return {
-        ...lead,
-        localAdjustedDate: previousLocalDateString,
-      }
+      const previousLocalDate = subHours(localCreationDate, 24);
+      adjustedleadLocalDate = format(previousLocalDate, 'yyyy-MM-dd');
     }
 
-    if (russiaHour >= 6 && leadLocalDate === localDateString ) {
-      return lead;
+    if (adjustedleadLocalDate === localDateString) {
+      return {
+        ...lead,
+        localAdjustedDate: adjustedleadLocalDate,
+      };
     }
+
     return null
   }).filter(Boolean) as Lead[];
 

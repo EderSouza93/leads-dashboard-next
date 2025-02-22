@@ -18,10 +18,8 @@ export default function Dashboard() {
   const [LeadsData, setLeadsData] = useState<{ date: string; leads: number } []>([]);
   const [isLoading, setIsLoading] = useState(true);
 
-  useEffect(() => {
-    async function fetchLeadsForRange() {
+    const fetchLeadsForRange = async () => {
       try {
-        setIsLoading(true);
         const daysToFecth = 15;
         const today = new Date();
         const leadsByDate: { [key: string]: number } = {};
@@ -47,10 +45,47 @@ export default function Dashboard() {
       } finally {
         setIsLoading(false);
       }
-    }
+    };
 
-    fetchLeadsForRange()
-  }, []);
+    const fetchCurrentDayLeads = async () => {
+      try {
+        const today = format(new Date(), 'yyyy-MM-dd');
+        const response = await fetch(`/api/leads-from-db?date=${today}`);
+        if (!response.ok) throw new Error(`Erro ao buscar leads para ${today}`);
+        const data = await response.json();
+
+        setLeadsData(prevData => {
+          const updatedData = [...prevData];
+          const todayIndex = updatedData.findIndex(item => item.date === today);
+          if (todayIndex !== -1) {
+            updatedData[todayIndex] = { date: today, leads: data.count || 0 }
+          } else {
+            updatedData.push({ date: today, leads: data.count || 0});
+            updatedData.sort((a, b) => a.date.localeCompare(b.date));
+          }
+          return updatedData;
+        });
+      } catch (error) {
+        console.error("Error updating leads for current day:", error);
+      }
+    };
+
+    useEffect(() => {
+      fetchLeadsForRange();
+
+      const currentDayInterval = setInterval(() => {
+        fetchCurrentDayLeads();
+      }, 60 * 1000);
+
+      const fullRangeInterval = setInterval(() => {
+        fetchLeadsForRange();
+      }, 5 * 60 * 1000);
+
+      return () => {
+        clearInterval(currentDayInterval);
+        clearInterval(fullRangeInterval);
+      }
+    }, []);
 
   if(isLoading) return <p>Carregando...</p>
 
@@ -58,7 +93,10 @@ export default function Dashboard() {
     const [time, setTime] = useState('');
 
     useEffect(() => {
-      setTime(new Date().toLocaleString());
+      const updatedTime = () => setTime(new Date().toLocaleString());
+      updatedTime();
+      const interval = setInterval(updatedTime, 1000);
+      return () => clearInterval(interval)
     }, []);
 
     return <span>{time}</span>
@@ -98,24 +136,24 @@ export default function Dashboard() {
           </Card>
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Taxa de Conversão</CardTitle>
+              <CardTitle className="text-sm font-medium">Leads convertidos</CardTitle>
               <TrendingUp className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">24.3%</div>
-              <p className="text-xs text-muted-foreground">+2.4% do que na ultima semana</p>
+              <div className="text-2xl font-bold">Em desenvolvimento...</div>
+              <p className="text-xs text-muted-foreground">Em desenvolvimento...</p>
             </CardContent>
           </Card>
-          {/* <Card>
+          <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Campanhas ativas</CardTitle>
+              <CardTitle className="text-sm font-medium">Taxa de Conversão</CardTitle>
               <Activity className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">3</div>
-              <p className="text-xs text-muted-foreground">2 terminando essa semana</p>
+              <div className="text-2xl font-bold">Em desenvolvimento...</div>
+              <p className="text-xs text-muted-foreground">Em desenvolvimento...</p>
             </CardContent>
-          </Card> */}
+          </Card>
         </div>
 
         <Tabs defaultValue="overview" className="space-y-4">
