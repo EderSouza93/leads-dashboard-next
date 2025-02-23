@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { useTheme } from "next-themes";
 import { format, subDays } from "date-fns";
 
@@ -21,6 +21,7 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Activity, Users, TrendingUp } from "lucide-react";
+import Loading from "@/components/Loader";
 
 interface LeadsByDate {
   [date: string]: number;
@@ -31,7 +32,7 @@ export default function Dashboard() {
   const [LeadsData, setLeadsData] = useState<{ date: string; leads: number }[]>(
     []
   );
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(false);
 
   const MAX_LEADS_SIZE = 500;
   const CACHE_DURATION_MINUTES = 1440;
@@ -61,7 +62,7 @@ export default function Dashboard() {
     return null;
   };
 
-  const fetchLeadsForRange = async (forceFetch = false) => {
+  const fetchLeadsForRange = useCallback(async (forceFetch = false) => {
     const cachedData = loadFromCache();
     if (!forceFetch && cachedData) {
       setLeadsData(cachedData);
@@ -103,9 +104,9 @@ export default function Dashboard() {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, []);
 
-  const fetchCurrentDayLeads = async () => {
+  const fetchCurrentDayLeads = useCallback(async () => {
     try {
       const today = format(new Date(), "yyyy-MM-dd");
       const response = await fetch(`/api/leads-from-db?date=${today}`);
@@ -140,25 +141,12 @@ export default function Dashboard() {
     } catch (error) {
       console.error("Error updating leads for current day:", error);
     }
-  };
+  }, [MAX_LEADS_SIZE]);
 
   useEffect(() => {
-    const cachedData = localStorage.getItem("leadsRawData");
-    const cachedTimestamp = localStorage.getItem("leadsDataTimestamp");
-    const cacheAge = cachedTimestamp
-      ? (Date.now() - parseInt(cachedTimestamp)) / 1000 / 60
-      : Infinity;
-
-    if (cachedData && cacheAge < CACHE_DURATION_MINUTES) {
-      const rawData: LeadsByDate = JSON.parse(cachedData);
-      const chartData = Object.entries(rawData)
-        .map(([date, leads]) => ({ date, leads: Number(leads) }))
-        .sort((a, b) => a.date.localeCompare(b.date));
-      if (chartData.length <= MAX_LEADS_SIZE) {
-        setLeadsData(chartData);
-      } else {
-        fetchLeadsForRange(true);
-      }
+    const cachedData = loadFromCache();
+    if (cachedData) {
+      setLeadsData(cachedData);
     } else {
       fetchLeadsForRange(true);
     }
@@ -175,9 +163,9 @@ export default function Dashboard() {
       clearInterval(currentDayInterval);
       clearInterval(fullRangeInterval);
     };
-  }, []);
+  }, [fetchLeadsForRange, fetchCurrentDayLeads]);
 
-  if (isLoading) return <p>Carregando...</p>;
+  if (isLoading) return <Loading />;
 
   // Clock
   const ClockComponent = () => {
@@ -190,6 +178,7 @@ export default function Dashboard() {
       return () => clearInterval(interval);
     }, []);
 
+    if (!currentTime) return null;
     return <span>{currentTime}</span>;
   };
 
@@ -251,12 +240,12 @@ export default function Dashboard() {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">
-                {isLoading
+                {LeadsData.length === 0
                   ? "..."
                   : LeadsData[LeadsData.length - 1]?.leads || 0}
               </div>
               <p className="text-xs text-muted-foreground">
-                {isLoading || LeadsData.length < 2
+                {LeadsData.length < 2
                   ? "Sem dados de ontem"
                   : `${calculatePercentageDifference(
                       LeadsData[LeadsData.length - 1].leads,
@@ -309,7 +298,7 @@ export default function Dashboard() {
               <CardContent className="pl-2">
                 <ResponsiveContainer width="100%" height={350}>
                   {isLoading ? (
-                    <p>Carregando dados...</p>
+                    <Loading />
                   ) : (
                     <LineChart data={LeadsData}>
                       <CartesianGrid strokeDasharray="3 3" />
@@ -331,6 +320,7 @@ export default function Dashboard() {
           </TabsContent>
         </Tabs>
       </div>
+      {isLoading && <Loading />}
     </div>
   );
 }
