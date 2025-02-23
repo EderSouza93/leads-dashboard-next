@@ -8,99 +8,220 @@ import { calculatePercentageDifference } from "@/utils/calculatePercentage";
 
 // COMPONENTS
 import ThemeToggle from "@/components/toggleTheme";
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
+import {
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend,
+  ResponsiveContainer,
+} from "recharts";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Activity, Users, TrendingUp } from "lucide-react";
 
+interface LeadsByDate {
+  [date: string]: number;
+}
+
 export default function Dashboard() {
   const { theme, resolvedTheme } = useTheme();
-  const [LeadsData, setLeadsData] = useState<{ date: string; leads: number } []>([]);
+  const [LeadsData, setLeadsData] = useState<{ date: string; leads: number }[]>(
+    []
+  );
   const [isLoading, setIsLoading] = useState(true);
 
-    const fetchLeadsForRange = async () => {
-      try {
-        const daysToFecth = 15;
-        const today = new Date();
-        const leadsByDate: { [key: string]: number } = {};
+  const MAX_LEADS_SIZE = 500;
+  const CACHE_DURATION_MINUTES = 1440;
 
-        // Search leads for every day 
-        for (let i = 0; i < daysToFecth; i++) {
-          const date = format(subDays(today, i), "yyyy-MM-dd");
-          const response = await fetch(`/api/leads-from-db?date=${date}`);
-          if (!response.ok) throw new Error(`Erro ao buscar leads para ${date}`);
-          const data = await response.json();
-          leadsByDate[date] = data.count || 0;
+  const loadFromCache = (): { date: string; leads: number }[] | null => {
+    const cachedData = localStorage.getItem("leadsRawData");
+    const cachedTimestamp = localStorage.getItem("leadsDataTimestamp");
+    const now = Date.now();
+    const cacheAge = cachedTimestamp
+      ? (now - parseInt(cachedTimestamp)) / 1000 / 60
+      : Infinity;
+
+    if (cachedData && cacheAge < CACHE_DURATION_MINUTES) {
+      const rawData: LeadsByDate = JSON.parse(cachedData);
+      const chartData = Object.entries(rawData)
+        .map(([date, leads]) => ({ date, leads: Number(leads) }))
+        .sort((a, b) => a.date.localeCompare(b.date));
+      if (chartData.length <= MAX_LEADS_SIZE) {
+        return chartData;
+      } else {
+        localStorage.removeItem("leadsRawData");
+        localStorage.removeItem("leadsDataTimestamp");
+        console.log("Cache do localStorage limpo devido ao excesso de leads");
+      }
+    }
+
+    return null;
+  };
+
+  const fetchLeadsForRange = async (forceFetch = false) => {
+    const cachedData = loadFromCache();
+    if (!forceFetch && cachedData) {
+      setLeadsData(cachedData);
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      const daysToFecth = 15;
+      const today = new Date();
+      const leadsByDate: LeadsByDate = {};
+
+      // Search leads for every day
+      for (let i = 0; i < daysToFecth; i++) {
+        const date = format(subDays(today, i), "yyyy-MM-dd");
+        const response = await fetch(`/api/leads-from-db?date=${date}`);
+        if (!response.ok) throw new Error(`Erro ao buscar leads para ${date}`);
+        const data = await response.json();
+        leadsByDate[date] = data.count || 0;
+      }
+
+      // Transform on array for the chart
+      const chartData = Object.entries(leadsByDate)
+        .map(([date, leads]) => ({ date, leads }))
+        .sort((a, b) => a.date.localeCompare(b.date));
+
+      if (chartData.length > MAX_LEADS_SIZE) {
+        localStorage.removeItem("leadsRawData");
+        localStorage.removeItem("leadsDataTimestamp");
+        console.log("Cache do localStorage limpo devido ao excesso de leads");
+      } else {
+        localStorage.setItem("leadsRawData", JSON.stringify(leadsByDate));
+        localStorage.setItem("leadsDataTimestamp", Date.now.toString());
+      }
+
+      setLeadsData(chartData);
+    } catch (error) {
+      console.error("Erro ao buscar leads:", error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const fetchCurrentDayLeads = async () => {
+    try {
+      const today = format(new Date(), "yyyy-MM-dd");
+      const response = await fetch(`/api/leads-from-db?date=${today}`);
+      if (!response.ok) throw new Error(`Erro ao buscar leads para ${today}`);
+      const data = await response.json();
+
+      setLeadsData((prevData) => {
+        const updatedData = [...prevData];
+        const todayIndex = updatedData.findIndex((item) => item.date === today);
+        if (todayIndex !== -1) {
+          updatedData[todayIndex] = { date: today, leads: data.count || 0 };
+        } else {
+          updatedData.push({ date: today, leads: data.count || 0 });
+          updatedData.sort((a, b) => a.date.localeCompare(b.date));
         }
 
-        // Transform on array for the chart
-        const chartData = Object.entries(leadsByDate)
-          .map(([date, leads]) => ({ date, leads }))
-          .sort((a, b) => a.date.localeCompare(b.date));
+        const leadsByDate = updatedData.reduce((acc, { date, leads }) => {
+          acc[date] = leads;
+          return acc;
+        }, {} as LeadsByDate);
 
+        if (updatedData.length > MAX_LEADS_SIZE) {
+          localStorage.removeItem("leadsRawData");
+          localStorage.removeItem("leadsDataTimestamp");
+          console.log("Cache do localStorage limpo devido ao excesso de leads");
+        } else {
+          localStorage.setItem("leadsRawData", JSON.stringify(leadsByDate));
+          localStorage.setItem("leadsDataTimestamp", Date.now.toString());
+        }
+        return updatedData;
+      });
+    } catch (error) {
+      console.error("Error updating leads for current day:", error);
+    }
+  };
+
+  useEffect(() => {
+    const cachedData = localStorage.getItem("leadsRawData");
+    const cachedTimestamp = localStorage.getItem("leadsDataTimestamp");
+    const cacheAge = cachedTimestamp
+      ? (Date.now() - parseInt(cachedTimestamp)) / 1000 / 60
+      : Infinity;
+
+    if (cachedData && cacheAge < CACHE_DURATION_MINUTES) {
+      const rawData: LeadsByDate = JSON.parse(cachedData);
+      const chartData = Object.entries(rawData)
+        .map(([date, leads]) => ({ date, leads: Number(leads) }))
+        .sort((a, b) => a.date.localeCompare(b.date));
+      if (chartData.length <= MAX_LEADS_SIZE) {
         setLeadsData(chartData);
-
-      } catch (error) {
-        console.error("Erro ao buscar leads:", error);
-      } finally {
-        setIsLoading(false);
+      } else {
+        fetchLeadsForRange(true);
       }
-    };
+    } else {
+      fetchLeadsForRange(true);
+    }
 
-    const fetchCurrentDayLeads = async () => {
-      try {
-        const today = format(new Date(), 'yyyy-MM-dd');
-        const response = await fetch(`/api/leads-from-db?date=${today}`);
-        if (!response.ok) throw new Error(`Erro ao buscar leads para ${today}`);
-        const data = await response.json();
+    const currentDayInterval = setInterval(() => {
+      fetchCurrentDayLeads();
+    }, 60 * 1000);
 
-        setLeadsData(prevData => {
-          const updatedData = [...prevData];
-          const todayIndex = updatedData.findIndex(item => item.date === today);
-          if (todayIndex !== -1) {
-            updatedData[todayIndex] = { date: today, leads: data.count || 0 }
-          } else {
-            updatedData.push({ date: today, leads: data.count || 0});
-            updatedData.sort((a, b) => a.date.localeCompare(b.date));
-          }
-          return updatedData;
-        });
-      } catch (error) {
-        console.error("Error updating leads for current day:", error);
-      }
-    };
-
-    useEffect(() => {
+    const fullRangeInterval = setInterval(() => {
       fetchLeadsForRange();
+    }, 5 * 60 * 1000);
 
-      const currentDayInterval = setInterval(() => {
-        fetchCurrentDayLeads();
-      }, 60 * 1000);
+    return () => {
+      clearInterval(currentDayInterval);
+      clearInterval(fullRangeInterval);
+    };
+  }, []);
 
-      const fullRangeInterval = setInterval(() => {
-        fetchLeadsForRange();
-      }, 5 * 60 * 1000);
+  if (isLoading) return <p>Carregando...</p>;
 
-      return () => {
-        clearInterval(currentDayInterval);
-        clearInterval(fullRangeInterval);
-      }
-    }, []);
-
-  if(isLoading) return <p>Carregando...</p>
-
-  const TimeComponent = () => {
-    const [time, setTime] = useState('');
+  // Clock
+  const ClockComponent = () => {
+    const [currentTime, setCurrentTime] = useState("");
 
     useEffect(() => {
-      const updatedTime = () => setTime(new Date().toLocaleString());
+      const updatedTime = () => setCurrentTime(new Date().toLocaleString());
       updatedTime();
       const interval = setInterval(updatedTime, 1000);
-      return () => clearInterval(interval)
+      return () => clearInterval(interval);
     }, []);
 
-    return <span>{time}</span>
-  }
+    return <span>{currentTime}</span>;
+  };
+
+  // Last Sync with database
+  const LastSyncComponent = () => {
+    const [lastSync, setLastSync] = useState("");
+
+    useEffect(() => {
+      const fetchLastSync = async () => {
+        try {
+          const response = await fetch("/api/last-sync");
+          if (!response.ok)
+            throw new Error("Erro ao buscar última sincronização");
+          const data = await response.json();
+          setLastSync(
+            data.lastSync
+              ? new Date(data.lastSync).toLocaleString()
+              : "Nenhuma sincronização ainda"
+          );
+        } catch (error) {
+          console.error("Erro ao buscar última sincronização:", error);
+          setLastSync("Erro ao carregar");
+        }
+      };
+
+      fetchLastSync();
+      const interval = setInterval(fetchLastSync, 60 * 1000);
+      return () => clearInterval(interval);
+    }, []);
+
+    return <span>{lastSync}</span>;
+  };
 
   return (
     <div className="min-h-screen bg-background p-8">
@@ -108,7 +229,14 @@ export default function Dashboard() {
         <div className="flex items-center justify-between mb-8">
           <h1 className="text-4xl font-bold tracking-tight">Dashboard</h1>
           <div className="flex items-center space-x-4">
-            <span className="text-sm text-muted-foreground">Ultima atualização: {<TimeComponent/>}</span>
+            <div className="text-sm text-muted-foreground">
+              <div>
+                Horário Atual: <ClockComponent />
+              </div>
+              <div>
+                Última Atualização: <LastSyncComponent />
+              </div>
+            </div>
             <ThemeToggle />
           </div>
         </div>
@@ -116,42 +244,53 @@ export default function Dashboard() {
         <div className="grid gap-4 md:grid-cols-3 mb-8">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Total de Leads Hoje</CardTitle>
+              <CardTitle className="text-sm font-medium">
+                Total de Leads Hoje
+              </CardTitle>
               <Users className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">
-                {isLoading ? '...' : LeadsData[LeadsData.length -1]?.leads || 0}
+                {isLoading
+                  ? "..."
+                  : LeadsData[LeadsData.length - 1]?.leads || 0}
               </div>
               <p className="text-xs text-muted-foreground">
-                { isLoading || LeadsData.length < 2
-                  ? 'Sem dados de ontem'
+                {isLoading || LeadsData.length < 2
+                  ? "Sem dados de ontem"
                   : `${calculatePercentageDifference(
-                    LeadsData[LeadsData.length - 1].leads,
-                    LeadsData[LeadsData.length - 2].leads
-                  )}% em relação a ontem`
-                }
+                      LeadsData[LeadsData.length - 1].leads,
+                      LeadsData[LeadsData.length - 2].leads
+                    )}% em relação a ontem`}
               </p>
             </CardContent>
           </Card>
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Leads convertidos</CardTitle>
+              <CardTitle className="text-sm font-medium">
+                Leads convertidos
+              </CardTitle>
               <TrendingUp className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">Em desenvolvimento...</div>
-              <p className="text-xs text-muted-foreground">Em desenvolvimento...</p>
+              <p className="text-xs text-muted-foreground">
+                Em desenvolvimento...
+              </p>
             </CardContent>
           </Card>
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Taxa de Conversão</CardTitle>
+              <CardTitle className="text-sm font-medium">
+                Taxa de Conversão
+              </CardTitle>
               <Activity className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">Em desenvolvimento...</div>
-              <p className="text-xs text-muted-foreground">Em desenvolvimento...</p>
+              <p className="text-xs text-muted-foreground">
+                Em desenvolvimento...
+              </p>
             </CardContent>
           </Card>
         </div>
@@ -173,14 +312,19 @@ export default function Dashboard() {
                     <p>Carregando dados...</p>
                   ) : (
                     <LineChart data={LeadsData}>
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="date" />
-                    <YAxis />
-                    <Tooltip />
-                    <Legend />
-                    <Line type="monotone" dataKey="leads" stroke="hsl(var(--primary))" activeDot={{ r: 8 }} />
-                  </LineChart>
-                  )}      
+                      <CartesianGrid strokeDasharray="3 3" />
+                      <XAxis dataKey="date" />
+                      <YAxis />
+                      <Tooltip />
+                      <Legend />
+                      <Line
+                        type="monotone"
+                        dataKey="leads"
+                        stroke="hsl(var(--primary))"
+                        activeDot={{ r: 8 }}
+                      />
+                    </LineChart>
+                  )}
                 </ResponsiveContainer>
               </CardContent>
             </Card>

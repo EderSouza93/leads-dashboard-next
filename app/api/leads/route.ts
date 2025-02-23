@@ -1,11 +1,13 @@
 import { NextResponse } from 'next/server';
 import { getLeadsByLocalDate } from '@/lib/bitrix';
 import { saveLeadsToDatabase } from '@/services/leadService';
+import { PrismaClient } from '@prisma/client';
 import { format } from 'date-fns';
 
-export const dynamic = 'force-dynamic';
-
+const prisma = new PrismaClient();
 const WEBHOOK_URL = process.env.BITRIX_WEBHOOK!;
+
+export const dynamic = 'force-dynamic';
 
 export async function GET(request: Request) {
     try{
@@ -13,10 +15,15 @@ export async function GET(request: Request) {
         const date = searchParams.get('date') || format(new Date(), 'yyyy-MM-dd');
         
         const leads = await getLeadsByLocalDate(WEBHOOK_URL, date);
-
         await saveLeadsToDatabase(leads)
+
+        await prisma.syncLog.create({
+            data: {
+                timestamp: new Date(),
+            },
+        });
         
-        console.log(date)
+        console.log(`Leads buscados para ${date}: ${leads.length}`)
 
         return NextResponse.json({
             success: true,
