@@ -226,7 +226,7 @@ export default function Dashboard() {
                 Última Atualização: <LastSyncComponent />
               </div>
             </div>
-            <ThemeToggle />
+            {/* <ThemeToggle /> */}
           </div>
         </div>
 
