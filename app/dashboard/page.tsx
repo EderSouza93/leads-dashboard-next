@@ -28,7 +28,7 @@ interface LeadsByDate {
 }
 
 export default function Dashboard() {
-  const { theme, resolvedTheme } = useTheme();
+  // const { theme, resolvedTheme } = useTheme();
   const [LeadsData, setLeadsData] = useState<{ date: string; leads: number }[]>(
     []
   );
