@@ -28,7 +28,7 @@ interface LeadsByDate {
 }
 
 export default function Dashboard() {
-  // const { theme, resolvedTheme } = useTheme();
+  const { theme, resolvedTheme } = useTheme();
   const [LeadsData, setLeadsData] = useState<{ date: string; leads: number }[]>(
     []
   );
@@ -226,7 +226,7 @@ export default function Dashboard() {
                 Última Atualização: <LastSyncComponent />
               </div>
             </div>
-            {/* <ThemeToggle /> */}
+             <ThemeToggle /> 
           </div>
         </div>
 
