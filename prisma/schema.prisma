@@ -14,19 +14,17 @@ datasource db {
 }
 
 model Lead {
-  id                Int     @id @default(autoincrement())
-  bitrixId          String  @unique
-  title             String?  
-  sourceId          String?
-  assignedById      String?
-  stageId           String?
-  bitrixCreatedAt   DateTime
-  localCreatedAt    DateTime
-  localDate         String
-  rawData           String
+  id           Int      @id @default(autoincrement())
+  bitrixId     String   @unique
+  title        String?
+  sourceId     String?
+  assignedById String?
+  stageId      String?
+  createdAt    DateTime
+  rawData      String
 }
 
 model SyncLog {
-  id                Int       @id @default(autoincrement())
-  timestamp         DateTime  @default(now())
+  id        Int      @id @default(autoincrement())
+  timestamp DateTime @default(now())
 }
