@@ -1,9 +1,7 @@
-import { PrismaClient } from "@prisma/client";
+import prisma from "@/lib/prisma";
 import { Lead } from "@/types/leadSchema";
 import { parseISO, subHours, formatISO } from "date-fns";
 import { RUSSIA_UTC_OFFSET } from "@/lib/bitrix";
-
-const prisma = new PrismaClient();
 
 export async function saveLeadsToDatabase(leads: Lead[]): Promise<number> {
   if (!leads.length) return 0;
