@@ -2,7 +2,6 @@ import prisma from "@/lib/prisma";
 import { Lead } from "@/types/leadSchema";
 import { parseISO, subHours, formatISO } from "date-fns";
 import { RUSSIA_UTC_OFFSET } from "@/lib/bitrix";
-import { resolve } from "path";
 
 async function withRetry<T>(
   operation: () => Promise<T>,

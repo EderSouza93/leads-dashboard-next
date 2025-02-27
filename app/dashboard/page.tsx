@@ -153,11 +153,11 @@ export default function Dashboard() {
 
     const currentDayInterval = setInterval(() => {
       fetchCurrentDayLeads();
-    }, 60 * 1000);
+    }, 10 * 60 * 1000);
 
     const fullRangeInterval = setInterval(() => {
       fetchLeadsForRange();
-    }, 5 * 60 * 1000);
+    }, 24 * 60 * 60 * 1000);
 
     return () => {
       clearInterval(currentDayInterval);
@@ -226,7 +226,7 @@ export default function Dashboard() {
                 Última Atualização: <LastSyncComponent />
               </div>
             </div>
-             <ThemeToggle /> 
+            <ThemeToggle />
           </div>
         </div>
 

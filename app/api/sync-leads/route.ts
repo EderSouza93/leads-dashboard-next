@@ -1,5 +1,4 @@
 import { NextResponse } from "next/server";
-import { syncCurrent, syncLeadsRange } from "@/services/leadSyncService";
 import { format, subDays } from "date-fns";
 import { WEBHOOK_URL } from "../leads/route";
 import { getLeadsByLocalDate } from "@/lib/bitrix";
