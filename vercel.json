@@ -2,8 +2,8 @@
 {
     "crons": [
       {
-        "path": "/api/sync-leads?full=true",
-        "schedule": "/30 0 * * *" 
+        "path": "/api/leads",
+        "schedule": " 0 * * * *" 
       }
     ]
   }
