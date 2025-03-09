@@ -17,6 +17,8 @@ import {
   Tooltip,
   Legend,
   ResponsiveContainer,
+  AreaChart,
+  Area,
 } from "recharts";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -153,11 +155,11 @@ export default function Dashboard() {
 
     const currentDayInterval = setInterval(() => {
       fetchCurrentDayLeads();
-    }, 60 * 1000);
+    }, 10 * 60 * 1000);
 
     const fullRangeInterval = setInterval(() => {
       fetchLeadsForRange();
-    }, 5 * 60 * 1000);
+    }, 24 * 60 * 60 * 1000);
 
     return () => {
       clearInterval(currentDayInterval);
@@ -226,7 +228,7 @@ export default function Dashboard() {
                 Última Atualização: <LastSyncComponent />
               </div>
             </div>
-             <ThemeToggle /> 
+            <ThemeToggle />
           </div>
         </div>
 
@@ -294,30 +296,56 @@ export default function Dashboard() {
             <Card>
               <CardHeader>
                 <CardTitle>Leads Overview</CardTitle>
-              </CardHeader>
-              <CardContent className="pl-2">
-                <ResponsiveContainer width="100%" height={350}>
-                  {isLoading ? (
-                    <Loading />
-                  ) : (
-                    <LineChart data={LeadsData}>
-                      <CartesianGrid strokeDasharray="3 3" />
-                      <XAxis dataKey="date" />
-                      <YAxis />
-                      <Tooltip />
-                      <Legend />
-                      <Line
-                        type="monotone"
-                        dataKey="leads"
-                        stroke="hsl(var(--primary))"
-                        activeDot={{ r: 8 }}
-                      />
-                    </LineChart>
-                  )}
-                </ResponsiveContainer>
-              </CardContent>
-            </Card>
-          </TabsContent>
+                  </CardHeader>
+                  <CardContent className="pl-2">
+                    <ResponsiveContainer width="100%" height={350}>
+                      {isLoading ? (
+                        <Loading />
+                      ) : (
+                        <AreaChart data={LeadsData}>
+                          <CartesianGrid
+                            strokeDasharray="3 3"
+                            stroke="hsl(var(--muted-foreground) / 0.4)" 
+                          />
+                          <XAxis
+                            dataKey="date"
+                            stroke="hsl(var(--foreground))"
+                            tickLine={false}
+                            axisLine={{ stroke: "hsl(var(--border))" }}
+                          />
+                          <YAxis
+                            stroke="hsl(var(--foreground))"
+                            tickLine={false}
+                            axisLine={{ stroke: "hsl(var(--border))" }}
+                          />
+                          <Tooltip
+                            contentStyle={{
+                              backgroundColor: "hsl(var(--background))",
+                              borderColor: "hsl(var(--border))",
+                              color: "hsl(var(--foreground))",
+                              borderRadius: "4px",
+                              border: "1px solid",
+                            }}
+                          />
+                          <Legend />
+                          <Area
+                            type="monotone"
+                            dataKey="leads"
+                            stroke="hsl(var(--primary))"
+                            fill="hsl(var(--primary) / 0.3)"
+                            strokeWidth={2}
+                            activeDot={{
+                              r: 8,
+                              fill: "hsl(var(--primary))",
+                              stroke: "hsl(var(--background))",
+                            }}
+                          />
+                        </AreaChart>
+                      )}
+                    </ResponsiveContainer>
+                  </CardContent>
+                </Card>
+              </TabsContent>
         </Tabs>
       </div>
       {isLoading && <Loading />}
