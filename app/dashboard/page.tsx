@@ -9,8 +9,6 @@ import { calculatePercentageDifference } from "@/utils/calculatePercentage";
 // COMPONENTS
 import ThemeToggle from "@/components/toggleTheme";
 import {
-  LineChart,
-  Line,
   XAxis,
   YAxis,
   CartesianGrid,
@@ -207,7 +205,7 @@ export default function Dashboard() {
       };
 
       fetchLastSync();
-      const interval = setInterval(fetchLastSync, 60 * 1000);
+      const interval = setInterval(fetchLastSync, 10 * 60 * 1000);
       return () => clearInterval(interval);
     }, []);
 
