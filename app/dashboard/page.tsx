@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState, useCallback } from "react";
 import { useTheme } from "next-themes";
-import { format, subDays } from "date-fns";
+import { format, subDays, parseISO, isToday } from "date-fns";
 
 //UTILS
 import { calculatePercentageDifference } from "@/utils/calculatePercentage";
@@ -27,6 +27,12 @@ interface LeadsByDate {
   [date: string]: number;
 }
 
+interface LeadData {
+  date: string;
+  count: number;
+  cacheable: boolean;
+}
+
 export default function Dashboard() {
   const { theme, resolvedTheme } = useTheme();
   const [LeadsData, setLeadsData] = useState<{ date: string; leads: number }[]>(
@@ -35,139 +41,172 @@ export default function Dashboard() {
   const [isLoading, setIsLoading] = useState(false);
 
   const MAX_LEADS_SIZE = 500;
-  const CACHE_DURATION_MINUTES = 1440;
+  const CACHE_DURATION_MINUTES = 1440; // 24 horas
 
-  const loadFromCache = (): { date: string; leads: number }[] | null => {
-    const cachedData = localStorage.getItem("leadsRawData");
-    const cachedTimestamp = localStorage.getItem("leadsDataTimestamp");
-    const now = Date.now();
-    const cacheAge = cachedTimestamp
-      ? (now - parseInt(cachedTimestamp)) / 1000 / 60
-      : Infinity;
-
-    if (cachedData && cacheAge < CACHE_DURATION_MINUTES) {
-      const rawData: LeadsByDate = JSON.parse(cachedData);
-      const chartData = Object.entries(rawData)
-        .map(([date, leads]) => ({ date, leads: Number(leads) }))
-        .sort((a, b) => a.date.localeCompare(b.date));
-      if (chartData.length <= MAX_LEADS_SIZE) {
-        return chartData;
-      } else {
-        localStorage.removeItem("leadsRawData");
-        localStorage.removeItem("leadsDataTimestamp");
-        console.log("Cache do localStorage limpo devido ao excesso de leads");
+  // Função modificada para carregar dados do localStorage
+  const loadFromCache = (date: string): LeadData | null => {
+    const cacheKey = `leads-data-${date}`;
+    const cachedData = localStorage.getItem(cacheKey);
+    
+    if (cachedData) {
+      try {
+        const parsedData = JSON.parse(cachedData);
+        const timestamp = localStorage.getItem(`${cacheKey}-timestamp`);
+        
+        // Verificar se os dados são de hoje (não usar cache para hoje)
+        const isCurrentDay = isToday(parseISO(date));
+        
+        // Se for o dia atual, verificar se o cache é recente (menos de 10 minutos)
+        // Se for dia passado, podemos usar o cache sem limite de tempo
+        if (!isCurrentDay || (timestamp && (Date.now() - parseInt(timestamp)) < 10 * 60 * 1000)) {
+          return parsedData;
+        }
+      } catch (error) {
+        console.error("Erro ao analisar dados em cache:", error);
+        localStorage.removeItem(cacheKey);
       }
     }
-
+    
     return null;
   };
 
-  const fetchLeadsForRange = useCallback(async (forceFetch = false) => {
-    const cachedData = loadFromCache();
-    if (!forceFetch && cachedData) {
-      setLeadsData(cachedData);
-      return;
+  // Função para salvar dados no cache
+  const saveToCache = (date: string, data: LeadData) => {
+    try {
+      const cacheKey = `leads-data-${date}`;
+      localStorage.setItem(cacheKey, JSON.stringify(data));
+      localStorage.setItem(`${cacheKey}-timestamp`, Date.now().toString());
+    } catch (error) {
+      console.error("Erro ao salvar dados no cache:", error);
     }
+  };
 
+  // Função modificada para buscar dados de uma única data
+  const fetchLeadsForDay = useCallback(async (date: string, forceRefresh = false) => {
+    // Se não forçar atualização, verifica o cache primeiro
+    if (!forceRefresh) {
+      const cachedData = loadFromCache(date);
+      if (cachedData) {
+        return cachedData;
+      }
+    }
+    
+    // Se chegou aqui, precisamos buscar do servidor
+    try {
+      const response = await fetch(`/api/leads-from-db?date=${date}`);
+      if (!response.ok) throw new Error(`Erro ao buscar leads para ${date}`);
+      
+      const data = await response.json();
+      
+      // Determinar se os dados podem ser cacheados (dias passados sim, atual não)
+      const isCurrentDay = isToday(parseISO(date));
+      const leadData: LeadData = {
+        date,
+        count: data.count || 0,
+        cacheable: !isCurrentDay
+      };
+      
+      // Armazenar no cache apenas se for dias passados ou formos forçados a atualizar
+      if (leadData.cacheable || forceRefresh) {
+        saveToCache(date, leadData);
+      }
+      
+      return leadData;
+    } catch (error) {
+      console.error(`Erro ao buscar leads para ${date}:`, error);
+      return null;
+    }
+  }, []);
+
+  // Função para buscar todas as datas necessárias
+  const fetchLeadsForRange = useCallback(async (forceFetch = false) => {
     setIsLoading(true);
     try {
-      const daysToFecth = 15;
+      const daysToFetch = 15;
       const today = new Date();
       const leadsByDate: LeadsByDate = {};
+      const fetchPromises = [];
 
-      // Search leads for every day
-      for (let i = 0; i < daysToFecth; i++) {
+      // Criar array de promessas para buscar todos os dias
+      for (let i = 0; i < daysToFetch; i++) {
         const date = format(subDays(today, i), "yyyy-MM-dd");
-        const response = await fetch(`/api/leads-from-db?date=${date}`);
-        if (!response.ok) throw new Error(`Erro ao buscar leads para ${date}`);
-        const data = await response.json();
-        leadsByDate[date] = data.count || 0;
+        const shouldForceRefresh = forceFetch || (i === 0); // Forçar refresh para o dia atual
+        
+        fetchPromises.push(
+          fetchLeadsForDay(date, shouldForceRefresh).then(leadData => {
+            if (leadData) {
+              leadsByDate[date] = leadData.count;
+            }
+            return leadData;
+          })
+        );
       }
 
-      // Transform on array for the chart
+      // Executar todas as requisições em paralelo
+      await Promise.all(fetchPromises);
+
+      // Transformar em array para o gráfico
       const chartData = Object.entries(leadsByDate)
         .map(([date, leads]) => ({ date, leads }))
         .sort((a, b) => a.date.localeCompare(b.date));
 
-      if (chartData.length > MAX_LEADS_SIZE) {
-        localStorage.removeItem("leadsRawData");
-        localStorage.removeItem("leadsDataTimestamp");
-        console.log("Cache do localStorage limpo devido ao excesso de leads");
-      } else {
-        localStorage.setItem("leadsRawData", JSON.stringify(leadsByDate));
-        localStorage.setItem("leadsDataTimestamp", Date.now.toString());
-      }
-
       setLeadsData(chartData);
     } catch (error) {
-      console.error("Erro ao buscar leads:", error);
+      console.error("Erro ao buscar range de leads:", error);
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [fetchLeadsForDay]);
 
+  // Função para atualizar apenas os dados do dia atual
   const fetchCurrentDayLeads = useCallback(async () => {
     try {
       const today = format(new Date(), "yyyy-MM-dd");
-      const response = await fetch(`/api/leads-from-db?date=${today}`);
-      if (!response.ok) throw new Error(`Erro ao buscar leads para ${today}`);
-      const data = await response.json();
-
-      setLeadsData((prevData) => {
-        const updatedData = [...prevData];
-        const todayIndex = updatedData.findIndex((item) => item.date === today);
-        if (todayIndex !== -1) {
-          updatedData[todayIndex] = { date: today, leads: data.count || 0 };
-        } else {
-          updatedData.push({ date: today, leads: data.count || 0 });
-          updatedData.sort((a, b) => a.date.localeCompare(b.date));
-        }
-
-        const leadsByDate = updatedData.reduce((acc, { date, leads }) => {
-          acc[date] = leads;
-          return acc;
-        }, {} as LeadsByDate);
-
-        if (updatedData.length > MAX_LEADS_SIZE) {
-          localStorage.removeItem("leadsRawData");
-          localStorage.removeItem("leadsDataTimestamp");
-          console.log("Cache do localStorage limpo devido ao excesso de leads");
-        } else {
-          localStorage.setItem("leadsRawData", JSON.stringify(leadsByDate));
-          localStorage.setItem("leadsDataTimestamp", Date.now.toString());
-        }
-        return updatedData;
-      });
+      const leadData = await fetchLeadsForDay(today, true); // Forçar refresh
+      
+      if (leadData) {
+        setLeadsData(prevData => {
+          const updatedData = [...prevData];
+          const todayIndex = updatedData.findIndex(item => item.date === today);
+          
+          if (todayIndex !== -1) {
+            updatedData[todayIndex] = { date: today, leads: leadData.count };
+          } else {
+            updatedData.push({ date: today, leads: leadData.count });
+            updatedData.sort((a, b) => a.date.localeCompare(b.date));
+          }
+          
+          return updatedData;
+        });
+      }
     } catch (error) {
-      console.error("Error updating leads for current day:", error);
+      console.error("Erro ao atualizar leads do dia atual:", error);
     }
-  }, [MAX_LEADS_SIZE]);
+  }, [fetchLeadsForDay]);
 
+  // Efeito de inicialização
   useEffect(() => {
-    const cachedData = loadFromCache();
-    if (cachedData) {
-      setLeadsData(cachedData);
-    } else {
-      fetchLeadsForRange(true);
-    }
-
+    // Iniciar carregando todos os dados
+    fetchLeadsForRange();
+    
+    // Intervalo para atualizar apenas o dia atual a cada 10 minutos
     const currentDayInterval = setInterval(() => {
       fetchCurrentDayLeads();
     }, 10 * 60 * 1000);
-
+    
+    // Intervalo para recarregar todos os dados uma vez por dia
+    // (útil para atualizar dias anteriores caso haja correções)
     const fullRangeInterval = setInterval(() => {
       fetchLeadsForRange();
     }, 24 * 60 * 60 * 1000);
-
+    
     return () => {
       clearInterval(currentDayInterval);
       clearInterval(fullRangeInterval);
     };
   }, [fetchLeadsForRange, fetchCurrentDayLeads]);
 
-  if (isLoading) return <Loading />;
-
-  // Clock
+  // Clock Component
   const ClockComponent = () => {
     const [currentTime, setCurrentTime] = useState("");
 
@@ -182,7 +221,7 @@ export default function Dashboard() {
     return <span>{currentTime}</span>;
   };
 
-  // Last Sync with database
+  // Last Sync Component
   const LastSyncComponent = () => {
     const [lastSync, setLastSync] = useState("");
 
@@ -211,6 +250,8 @@ export default function Dashboard() {
 
     return <span>{lastSync}</span>;
   };
+
+  if (isLoading && LeadsData.length === 0) return <Loading />;
 
   return (
     <div className="min-h-screen bg-background p-8">
