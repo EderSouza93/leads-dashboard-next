@@ -13,17 +13,18 @@ export async function GET(request: Request) {
     const today = new Date();
     const leadsByDate: { [date: string]: number } = {};
 
-    for (let i = 0; i < daysToFetch; i++) {
-      const date = format(subDays(today, i), "yyyy-MM-dd");
-      console.log(`Searching leads to ${date}...`);
+    const dates = Array.from({ length: daysToFetch }, (_, i) =>
+    format(subDays(today, i), "yyyy-MM-dd")
+    );
+    const leadsPromises = dates.map(async (date) => {
       const leads = await getLeadsByLocalDate(WEBHOOK_URL, date);
-      console.log(`Leads found for ${date}: ${leads.length}`);
-
       const savedCount = await saveLeadsToDatabase(leads);
-      console.log(`Leads saved to ${date}: ${savedCount}`);
-
-      leadsByDate[date] = savedCount;
-    }
+      return { date, savedCount };
+    });
+    const results = await Promise.all(leadsPromises);
+    results.forEach(({ date, savedCount }) => {
+    leadsByDate[date] = savedCount;
+  });
 
     return NextResponse.json({
       message: fullSync ? "Full sync completed" : "Current day sync completed",
