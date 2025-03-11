@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
-import { formatISO } from "date-fns";
+import { formatISO, isToday, parseISO } from "date-fns";
 
 export async function GET(request: Request) {
   let date;
@@ -11,7 +11,14 @@ export async function GET(request: Request) {
       formatISO(new Date(), {
         format: "extended",
         representation: "complete",
-      }) + "Z";
+    }) + "Z";
+    
+
+    const isCurrentDay = isToday(parseISO(date.split('T')[0]));
+
+    const headers = {
+      'X-Can-Cache': isCurrentDay ? 'false' : 'true'
+    }
 
     const leads = await prisma.lead.findMany({
       where: {
@@ -47,9 +54,10 @@ export async function GET(request: Request) {
       date,
       count,
       leads: formattedLeads,
-    });
+      cacheable: !isCurrentDay
+    }, { headers });
   } catch (error) {
-    console.error(`Error to search leads to ${date}`, error);
+    console.error(`Error to search leads`, error);
     return NextResponse.json(
       {
         error: "Error to search leads of database",
